@@ -251,6 +251,29 @@
       if ((index != null) && !guard) return array[index];
     },
 
+    // A function to get values via indices into an array
+    nths: nths = function(array, indices) {
+      if (array == null) return void 0;
+
+      if (isSeq(indices))
+        return _(indices).map(function(i){return array[i];});
+      else
+        return nths(array, slice.call(arguments, 1));
+    },
+    valuesAt: nths,
+
+    // A function to get at "truthily" indexed values
+    // bin refers to "binary" nature of true/false values in binIndices
+    // but can also be thought of as putting array values into either "take" or "don't" bins
+    binPick: function binPick(array, binIndices) {
+      if (array == null) return void 0;
+
+      if (isSeq(binIndices))
+        return _.nths(array, _.range(binIndices.length).filter(function(i){return binIndices[i];}));
+      else
+        return binPick(array, slice.call(arguments, 1));
+    },
+
     // Takes all items in an array while a given predicate returns truthy.
     takeWhile: function(array, pred) {
       if (!isSeq(array)) throw new TypeError;
@@ -591,6 +614,30 @@
     };
   }());
 
+  // Right curry variants
+  // ---------------------
+  var curryRight = function (func) {
+    return curry.call(this, func, true);
+  };
+
+  var curryRight2 = function (fun) {
+    return enforcesUnary(function (last) {
+      return enforcesUnary(function (first) {
+        return fun.call(this, first, last);
+      });
+    });
+  };
+
+  var curryRight3 = function (fun) {
+    return enforcesUnary(function (last) {
+      return enforcesUnary(function (second) {
+        return enforcesUnary(function (first) {
+          return fun.call(this, first, second, last);
+        });
+      });
+    });
+  };
+
   // Mixing in the arity functions
   // -----------------------------
 
@@ -650,9 +697,8 @@
     curry: curry,
 
     // Flexible right to left curry with strict arity.
-    rCurry: function (func) {
-      return curry.call(this, func, true);
-    },
+    curryRight: curryRight,
+    rCurry: curryRight, // alias for backwards compatibility
 
 
     curry2: function (fun) {
@@ -673,24 +719,13 @@
       });
     },
 
-      // reverse currying for functions taking two arguments.
-    rcurry2: function (fun) {
-      return enforcesUnary(function (last) {
-        return enforcesUnary(function (first) {
-          return fun.call(this, first, last);
-        });
-      });
-    },
+    // reverse currying for functions taking two arguments.
+    curryRight2: curryRight2,
+    rcurry2: curryRight2, // alias for backwards compatibility
 
-    rcurry3: function (fun) {
-      return enforcesUnary(function (last) {
-        return enforcesUnary(function (second) {
-          return enforcesUnary(function (first) {
-            return fun.call(this, first, second, last);
-          });
-        });
-      });
-    },
+    curryRight3: curryRight3,
+    rcurry3: curryRight3, // alias for backwards compatibility
+
     // Dynamic decorator to enforce function arity and defeat varargs.
     enforce: enforce
   });
@@ -750,7 +785,22 @@
     };
   };
   
+  var createPredicateApplicator = function (funcToInvoke /*, preds */) {
+    var preds = _(arguments).tail();
+
+    return function (objToCheck) {
+      var array = _(objToCheck).cat();
+
+      return _[funcToInvoke](array, function (e) {
+        return _[funcToInvoke](preds, function (p) {
+          return p(e);
+        });
+      });
+    };
+  };
+
   // n.b. depends on underscore.function.arity.js
+  // n.b. depends on underscore.array.builders.js
     
   // Takes a target function and a mapping function. Returns a function
   // that applies the mapper to its arguments before evaluating the body.
@@ -783,32 +833,12 @@
     // Composes a bunch of predicates into a single predicate that
     // checks all elements of an array for conformance to all of the
     // original predicates.
-    conjoin: function(/* preds */) {
-      var preds = arguments;
-
-      return function(array) {
-        return _.every(array, function(e) {
-          return _.every(preds, function(p) {
-            return p(e);
-          });
-        });
-      };
-    },
+    conjoin: _(createPredicateApplicator).partial('every'),
 
     // Composes a bunch of predicates into a single predicate that
     // checks all elements of an array for conformance to any of the
     // original predicates.
-    disjoin: function(/* preds */) {
-      var preds = arguments;
-
-      return function(array) {
-        return _.some(array, function(e) {
-          return _.some(preds, function(p) {
-            return p(e);
-          });
-        });
-      };
-    },
+    disjoin: _(createPredicateApplicator).partial('some'),
 
     // Takes a predicate-like and returns a comparator (-1,0,1).
     comparator: function(fun) {
